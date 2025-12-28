@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+pydantic-settings
+python-multipart
+chromadb
+sentence-transformers
+PyPDF2
+python-docx
+aiofiles

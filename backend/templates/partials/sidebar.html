@@ -1,22 +1,29 @@
-<ul class="space-y-1">
+<ul class="space-y-0.5 px-2">
     {% for col in collections %}
     <li>
-        <div hx-get="/collections/{{ col.id }}" hx-target="main" hx-swap="outerHTML" class="cursor-pointer group flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200
+        <div hx-get="/collections/{{ col.id }}" hx-target="main" hx-swap="outerHTML" class="cursor-pointer group flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-all duration-200 border-l-2
                   {% if current_collection and current_collection.id == col.id %}
-                      bg-blue-50 text-blue-700 font-medium
+                      bg-card border-accent text-white shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]
                   {% else %}
-                      text-gray-600 hover:bg-gray-100
+                      border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5
                   {% endif %}">
 
             <span
-                class="{% if current_collection and current_collection.id == col.id %}text-blue-500{% else %}text-gray-400 group-hover:text-gray-500{% endif %}">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                class="{% if current_collection and current_collection.id == col.id %}text-accent{% else %}text-gray-600 group-hover:text-gray-400 decoration-none{% endif %}">
+                {% if current_collection and current_collection.id == col.id %}
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"
+                    stroke="none">
+                    <circle cx="12" cy="12" r="10"></circle>
+                </svg>
+                {% else %}
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                 </svg>
+                {% endif %}
             </span>
 
-            <span class="truncate">{{ col.name }}</span>
+            <span class="truncate font-medium">{{ col.name }}</span>
         </div>
     </li>
     {% endfor %}

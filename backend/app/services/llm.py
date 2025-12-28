@@ -32,10 +32,12 @@ class LLMService:
             key = f"{src_id}_{page}"
             
             if key not in sources:
+                snippet = chunk.get("text", "")[:80].replace("\n", " ") + "..."
                 sources[key] = {
                     "source_doc_id": src_id,
                     "page_number": page,
-                    "filename": meta.get("filename", f"doc-{src_id}") 
+                    "filename": meta.get("filename", f"doc-{src_id}"),
+                    "snippet": snippet
                 }
         return list(sources.values())
 

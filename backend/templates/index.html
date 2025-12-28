@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Vault // TERMINAL</title>
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <style>
+        /* Cyberpunk Theme */
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;600&display=swap');
+        
+        body {
+            font-family: 'Fira Code', monospace;
+            background-color: #050505;
+            color: #00ff41; /* CRT Green */
+        }
+        
+        .neon-border {
+            border: 1px solid #00ff41;
+            box-shadow: 0 0 5px #00ff41;
+        }
+        
+        .neon-text {
+            text-shadow: 0 0 5px #00ff41;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #000; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #004411; 
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00ff41; 
+        }
+        
+        .chat-bubble-user {
+            background-color: #001100;
+            border-left: 2px solid #00ff41;
+        }
+        
+        .chat-bubble-bot {
+            background-color: #0a0a0a;
+            border-left: 2px solid #ff00ff; /* Pink/Magenta for Bot */
+            color: #ffccff;
+        }
+        
+        .typing-cursor::after {
+            content: '█';
+            animation: blink 1s step-end infinite;
+        }
+        
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden selection:bg-green-900 selection:text-white">
+
+    <!-- Sidebar -->
+    <aside class="w-64 border-r border-green-900 flex flex-col bg-black">
+        <div class="p-4 border-b border-green-900">
+            <h1 class="text-2xl font-bold neon-text">RAG_VAULT_v1</h1>
+            <div class="text-xs text-green-700 mt-1">SYSTEM ONLINE</div>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto p-4" id="sidebar-collections">
+            {% include 'partials/sidebar.html' %}
+        </div>
+        
+        <div class="p-4 border-t border-green-900">
+            <form hx-post="/collections" hx-target="#sidebar-collections" class="flex gap-2">
+                <input type="text" name="name" placeholder="New Neural Net..." 
+                       class="bg-black border border-green-800 text-green-500 px-2 py-1 text-sm w-full focus:outline-none focus:border-green-400">
+                <button type="submit" class="text-green-500 hover:text-white font-bold">+</button>
+            </form>
+        </div>
+    </aside>
+
+    <!-- Main Area -->
+    <main class="flex-1 flex flex-col relative">
+        <!-- Header -->
+        <header class="h-12 border-b border-green-900 flex items-center justify-between px-6 bg-black/50 backdrop-blur">
+            <div class="text-sm text-green-600">
+                CURRENT_LINK: <span class="text-green-300 font-bold">{{ current_collection.name }}</span>
+            </div>
+            
+            <!-- Upload Doc -->
+            <form hx-post="/ingest" hx-encoding="multipart/form-data" hx-target="#upload-status" class="flex items-center gap-2">
+                <input type="hidden" name="collection_id" value="{{ current_collection.id }}">
+                <input type="file" name="file" class="hidden" id="file-upload">
+                <label for="file-upload" class="cursor-pointer text-xs border border-green-700 px-2 py-1 hover:bg-green-900">
+                    [UPLOAD_DATA]
+                </label>
+                <button type="submit" class="text-xs text-green-500 hover:text-white">EXECUTE</button>
+            </form>
+            <div id="upload-status" class="text-xs"></div>
+        </header>
+
+        <!-- Chat Container -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-4" id="chat-container" 
+             x-data="chatApp('{{ current_collection.id }}')" x-init="initws()">
+            
+            <!-- Chat History -->
+            <template x-for="msg in messages" :key="msg.id">
+                <div :class="msg.role === 'user' ? 'text-right' : 'text-left'">
+                    <div class="inline-block max-w-3xl p-4 rounded" 
+                         :class="msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-bot'">
+                        
+                        <!-- Content -->
+                        <div class="whitespace-pre-wrap" x-text="msg.content"></div>
+                        
+                        <!-- Sources (Only for Bot) -->
+                        <template x-if="msg.sources && msg.sources.length > 0">
+                            <div class="mt-4 pt-2 border-t border-gray-800 text-xs text-gray-500 font-mono">
+                                <div class="mb-1 text-pink-500 opacity-70">>> DATA_SOURCES:</div>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="src in msg.sources">
+                                        <span class="bg-gray-900 border border-gray-700 px-1 rounded hover:border-pink-500" 
+                                              x-text="`[${src.filename} :: PG.${src.page_number}]`"></span>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+            
+            <!-- Streaming/Typing Indicator -->
+            <div x-show="isTyping" class="text-left">
+                <div class="inline-block max-w-3xl p-4 rounded chat-bubble-bot">
+                     <span x-text="currentStream" class="whitespace-pre-wrap"></span><span class="typing-cursor"></span>
+                     
+                     <!-- Streaming Sources -->
+                     <template x-if="streamSources.length > 0">
+                        <div class="mt-2 text-xs text-pink-500 opacity-50">
+                            [ACCESSING_DATA...]
+                        </div>
+                     </template>
+                </div>
+            </div>
+            
+            <!-- Bottom Anchor -->
+            <div id="chat-anchor"></div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 border-t border-green-900 bg-black">
+            <div class="relative" x-data>
+                <textarea 
+                    class="w-full bg-[#0a0a0a] border border-green-800 p-3 h-24 text-green-300 focus:outline-none focus:border-green-500 resize-none font-mono text-sm"
+                    placeholder="ENTER_QUERY..."
+                    @keydown.enter.prevent="$dispatch('send-query')"
+                    id="msg-input"
+                ></textarea>
+                <button 
+                    class="absolute bottom-2 right-2 bg-green-900 hover:bg-green-700 text-white px-4 py-1 text-xs"
+                    @click="$dispatch('send-query')"
+                >
+                    SEND_PACKET
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('chatApp', (collectionId) => ({
+                messages: [],
+                ws: null,
+                isTyping: false,
+                currentStream: '',
+                streamSources: [],
+                
+                initws() {
+                    console.log("INITIALIZING UPLINK TO " + collectionId);
+                    // Standard websocket url construction
+                    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+                    this.ws = new WebSocket(`${proto}://${window.location.host}/ws/chat/${collectionId}`);
+                    
+                    this.ws.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        
+                        // Scroll to bottom
+                        const anchor = document.getElementById('chat-anchor');
+                        if(anchor) anchor.scrollIntoView({ behavior: "smooth" });
+
+                        if (data.type === 'citation') {
+                            this.isTyping = true;
+                            this.streamSources = data.data;
+                        } else if (data.type === 'token') {
+                            this.isTyping = true;
+                            this.currentStream += data.data;
+                        } else if (data.type === 'done') {
+                            // Finalize message
+                            this.messages.push({
+                                id: Date.now(),
+                                role: 'assistant',
+                                content: this.currentStream,
+                                sources: this.streamSources
+                            });
+                            this.isTyping = false;
+                            this.currentStream = '';
+                            this.streamSources = [];
+                        } else if (data.type === 'error') {
+                            this.messages.push({
+                                id: Date.now(),
+                                role: 'assistant',
+                                content: "ERROR: " + data.data,
+                                sources: []
+                            });
+                            this.isTyping = false;
+                        }
+                    };
+                },
+                
+                sendQuery() {
+                    const input = document.getElementById('msg-input');
+                    const text = input.value.trim();
+                    if (!text) return;
+                    
+                    this.messages.push({
+                        id: Date.now(),
+                        role: 'user',
+                        content: text
+                    });
+                    
+                    this.ws.send(text);
+                    input.value = '';
+                    
+                    // Reset Stream State
+                    this.currentStream = '';
+                    this.streamSources = [];
+                    this.isTyping = true;
+                }
+            }));
+        });
+        
+        // Global listener for the input dispatch
+        document.addEventListener('send-query', () => {
+            // Find the alpine component scope
+            const el = document.getElementById('chat-container');
+            if (el && el.__x && el.__x.$data) {
+                el.__x.$data.sendQuery();
+            }
+        });
+    </script>
+</body>
+</html>

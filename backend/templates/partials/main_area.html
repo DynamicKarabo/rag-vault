@@ -1,0 +1,104 @@
+<!-- This is effectively the whole 'Main' content. 
+     Used when switching collections via HTMX if we wanted to reload the whole right side. 
+     Currently the router calls this template. -->
+<!DOCTYPE html>
+<!-- Re-using basic layout structure if loaded via HTMX, but ideally we just redirect or full reload for simplicity in this MVP -->
+<!-- Actually, main_area typically is just the inner part. 
+     But since our Alpine app sits on the main tag, swapping it instance-by-instance is tricky.
+     Simplest approach: Full Page Redirect for collection switch. 
+     The endpoints.py currently returns "partials/main_area.html" for /collections/{id}.
+     Let's make this page actually extend or be a full page if it's simpler, 
+     but request was HTMX switching.
+     
+     If we want HTMX switching "main area":
+     The Alpine component needs to be re-initialized.
+     
+     Logic:
+     1. User clicks sidebar link (hx-get="/collections/ID" hx-target="main").
+     2. Server returns just the <main>...</main> block.
+     3. HTMX swaps it.
+     4. Alpine re-initializes because x-data is on the root of the swapped content.
+-->
+
+<main class="flex-1 flex flex-col relative">
+    <!-- Header -->
+    <header class="h-12 border-b border-green-900 flex items-center justify-between px-6 bg-black/50 backdrop-blur">
+        <div class="text-sm text-green-600">
+            CURRENT_LINK: <span class="text-green-300 font-bold">{{ current_collection.name }}</span>
+        </div>
+
+        <!-- Upload Doc -->
+        <form hx-post="/ingest" hx-encoding="multipart/form-data" hx-target="#upload-status"
+            class="flex items-center gap-2">
+            <input type="hidden" name="collection_id" value="{{ current_collection.id }}">
+            <input type="file" name="file" class="hidden" id="file-upload-{{ current_collection.id }}">
+            <label for="file-upload-{{ current_collection.id }}"
+                class="cursor-pointer text-xs border border-green-700 px-2 py-1 hover:bg-green-900">
+                [UPLOAD_DATA]
+            </label>
+            <button type="submit" class="text-xs text-green-500 hover:text-white">EXECUTE</button>
+        </form>
+        <div id="upload-status" class="text-xs"></div>
+    </header>
+
+    <!-- Chat Container -->
+    <div class="flex-1 overflow-y-auto p-6 space-y-4" id="chat-container"
+        x-data="chatApp('{{ current_collection.id }}')" x-init="initws()">
+
+        <!-- Chat History -->
+        <template x-for="msg in messages" :key="msg.id">
+            <div :class="msg.role === 'user' ? 'text-right' : 'text-left'">
+                <div class="inline-block max-w-3xl p-4 rounded"
+                    :class="msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-bot'">
+
+                    <!-- Content -->
+                    <div class="whitespace-pre-wrap" x-text="msg.content"></div>
+
+                    <!-- Sources (Only for Bot) -->
+                    <template x-if="msg.sources && msg.sources.length > 0">
+                        <div class="mt-4 pt-2 border-t border-gray-800 text-xs text-gray-500 font-mono">
+                            <div class="mb-1 text-pink-500 opacity-70">>> DATA_SOURCES:</div>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="src in msg.sources">
+                                    <span class="bg-gray-900 border border-gray-700 px-1 rounded hover:border-pink-500"
+                                        x-text="`[${src.filename} :: PG.${src.page_number}]`"></span>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </template>
+
+        <!-- Streaming/Typing Indicator -->
+        <div x-show="isTyping" class="text-left">
+            <div class="inline-block max-w-3xl p-4 rounded chat-bubble-bot">
+                <span x-text="currentStream" class="whitespace-pre-wrap"></span><span class="typing-cursor"></span>
+
+                <!-- Streaming Sources -->
+                <template x-if="streamSources.length > 0">
+                    <div class="mt-2 text-xs text-pink-500 opacity-50">
+                        [ACCESSING_DATA...]
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Bottom Anchor -->
+        <div id="chat-anchor"></div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="p-4 border-t border-green-900 bg-black">
+        <div class="relative" x-data>
+            <textarea
+                class="w-full bg-[#0a0a0a] border border-green-800 p-3 h-24 text-green-300 focus:outline-none focus:border-green-500 resize-none font-mono text-sm"
+                placeholder="ENTER_QUERY..." @keydown.enter.prevent="$dispatch('send-query')" id="msg-input"></textarea>
+            <button class="absolute bottom-2 right-2 bg-green-900 hover:bg-green-700 text-white px-4 py-1 text-xs"
+                @click="$dispatch('send-query')">
+                SEND_PACKET
+            </button>
+        </div>
+    </div>
+
+</main>

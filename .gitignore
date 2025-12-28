@@ -44,3 +44,9 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Project Specific
+chroma_db/
+uploads/
+*.db
+*.sqlite3

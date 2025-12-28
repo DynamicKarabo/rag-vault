@@ -21,6 +21,19 @@ class Collection(Base):
     
     # Relationship to docs
     documents = relationship("Document", back_populates="collection", cascade="all, delete-orphan")
+    messages = relationship("Message", back_populates="collection", cascade="all, delete-orphan")
+
+class Message(Base):
+    __tablename__ = "messages"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    collection_id = Column(String, ForeignKey("collections.id"))
+    role = Column(String) # user / assistant
+    content = Column(String)
+    sources = Column(String, nullable=True) # JSON string
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    collection = relationship("Collection", back_populates="messages")
+
 
 class Document(Base):
     __tablename__ = "documents"

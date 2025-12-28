@@ -1,103 +1,149 @@
-<!-- This is effectively the whole 'Main' content. 
-     Used when switching collections via HTMX if we wanted to reload the whole right side. 
-     Currently the router calls this template. -->
-<!DOCTYPE html>
-<!-- Re-using basic layout structure if loaded via HTMX, but ideally we just redirect or full reload for simplicity in this MVP -->
-<!-- Actually, main_area typically is just the inner part. 
-     But since our Alpine app sits on the main tag, swapping it instance-by-instance is tricky.
-     Simplest approach: Full Page Redirect for collection switch. 
-     The endpoints.py currently returns "partials/main_area.html" for /collections/{id}.
-     Let's make this page actually extend or be a full page if it's simpler, 
-     but request was HTMX switching.
-     
-     If we want HTMX switching "main area":
-     The Alpine component needs to be re-initialized.
-     
-     Logic:
-     1. User clicks sidebar link (hx-get="/collections/ID" hx-target="main").
-     2. Server returns just the <main>...</main> block.
-     3. HTMX swaps it.
-     4. Alpine re-initializes because x-data is on the root of the swapped content.
--->
+<main class="flex-1 flex flex-col relative bg-white" x-data="chatApp('{{ current_collection.id }}')" x-init="
+        console.log('Reloading Chat for {{ current_collection.id }}');
+        // Fetch History
+        fetch('/collections/{{ current_collection.id }}/messages')
+            .then(res => res.json())
+            .then(data => {
+                messages = data;
+                $nextTick(() => document.getElementById('chat-anchor').scrollIntoView());
+            });
+        initws();
+      ">
 
-<main class="flex-1 flex flex-col relative">
+
     <!-- Header -->
-    <header class="h-12 border-b border-green-900 flex items-center justify-between px-6 bg-black/50 backdrop-blur">
-        <div class="text-sm text-green-600">
-            CURRENT_LINK: <span class="text-green-300 font-bold">{{ current_collection.name }}</span>
+    <header class="h-16 flex items-center justify-between px-8 border-b border-gray-100 bg-white/80 backdrop-blur z-10">
+        <div class="flex items-center gap-3">
+            <h2 class="text-lg font-semibold text-gray-800 tracking-tight">{{ current_collection.name }}</h2>
+            <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs font-medium">Verified</span>
         </div>
 
-        <!-- Upload Doc -->
+        <!-- Upload -->
         <form hx-post="/ingest" hx-encoding="multipart/form-data" hx-target="#upload-status"
-            class="flex items-center gap-2">
+            class="flex items-center gap-4">
             <input type="hidden" name="collection_id" value="{{ current_collection.id }}">
-            <input type="file" name="file" class="hidden" id="file-upload-{{ current_collection.id }}">
+            <input type="file" name="file" class="hidden" id="file-upload-{{ current_collection.id }}"
+                onchange="document.getElementById('upload-btn-{{ current_collection.id }}').click()">
+
             <label for="file-upload-{{ current_collection.id }}"
-                class="cursor-pointer text-xs border border-green-700 px-2 py-1 hover:bg-green-900">
-                [UPLOAD_DATA]
+                class="cursor-pointer text-sm font-medium text-gray-500 hover:text-blue-600 transition-colors flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                Upload Source
             </label>
-            <button type="submit" class="text-xs text-green-500 hover:text-white">EXECUTE</button>
+            <button type="submit" id="upload-btn-{{ current_collection.id }}" class="hidden">Submit</button>
         </form>
-        <div id="upload-status" class="text-xs"></div>
+        <div id="upload-status" class="text-xs text-gray-400"></div>
     </header>
 
     <!-- Chat Container -->
-    <div class="flex-1 overflow-y-auto p-6 space-y-4" id="chat-container"
-        x-data="chatApp('{{ current_collection.id }}')" x-init="initws()">
+    <div class="flex-1 overflow-y-auto" id="chat-container">
+        <div class="max-w-3xl mx-auto py-8 px-4 space-y-8">
 
-        <!-- Chat History -->
-        <template x-for="msg in messages" :key="msg.id">
-            <div :class="msg.role === 'user' ? 'text-right' : 'text-left'">
-                <div class="inline-block max-w-3xl p-4 rounded"
-                    :class="msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-bot'">
+            <!-- Welcome placeholder if empty -->
+            <div x-show="messages.length === 0 && !isTyping" class="text-center py-20 opacity-50">
+                <div class="inline-block p-4 rounded-full bg-blue-50 text-blue-500 mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M12 16v-4"></path>
+                        <path d="M12 8h.01"></path>
+                    </svg>
+                </div>
+                <h3 class="text-xl font-medium text-gray-800">Ready to assist.</h3>
+            </div>
 
-                    <!-- Content -->
-                    <div class="whitespace-pre-wrap" x-text="msg.content"></div>
+            <!-- Messages -->
+            <template x-for="msg in messages" :key="msg.id">
+                <div class="flex gap-4" :class="msg.role === 'user' ? 'flex-row-reverse' : ''">
 
-                    <!-- Sources (Only for Bot) -->
-                    <template x-if="msg.sources && msg.sources.length > 0">
-                        <div class="mt-4 pt-2 border-t border-gray-800 text-xs text-gray-500 font-mono">
-                            <div class="mb-1 text-pink-500 opacity-70">>> DATA_SOURCES:</div>
-                            <div class="flex flex-wrap gap-2">
+                    <!-- Avatar -->
+                    <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                        :class="msg.role === 'user' ? 'bg-gray-200 text-gray-600' : 'bg-blue-600 text-white shadow-blue-200 shadow-md'">
+                        <span x-text="msg.role === 'user' ? 'U' : 'AI'"></span>
+                    </div>
+
+                    <!-- Bubble -->
+                    <div class="max-w-[80%] space-y-2">
+                        <div class="rounded-2xl px-5 py-3 whitespace-pre-wrap leading-relaxed shadow-sm"
+                            :class="msg.role === 'user' ? 'bg-gray-100 text-gray-800' : 'bg-white border border-gray-100 text-gray-800'">
+                            <span x-text="msg.content"></span>
+                        </div>
+
+                        <!-- Citations -->
+                        <template x-if="msg.sources && msg.sources.length > 0">
+                            <div class="flex flex-wrap gap-2 pt-1">
                                 <template x-for="src in msg.sources">
-                                    <span class="bg-gray-900 border border-gray-700 px-1 rounded hover:border-pink-500"
-                                        x-text="`[${src.filename} :: PG.${src.page_number}]`"></span>
+                                    <span
+                                        class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-white border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 transition-colors shadow-sm cursor-help"
+                                        :title="`Source: ${src.filename}, Page: ${src.page_number}`">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"
+                                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                            stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                            <polyline points="14 2 14 8 20 8"></polyline>
+                                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                                            <polyline points="10 9 9 9 8 9"></polyline>
+                                        </svg>
+                                        <span x-text="src.filename"></span>
+                                        <span class="text-gray-300">|</span>
+                                        <span x-text="src.page_number"></span>
+                                    </span>
                                 </template>
                             </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Typing Indicator -->
+            <div x-show="isTyping" class="flex gap-4">
+                <div
+                    class="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 text-white shadow-blue-200 shadow-md flex items-center justify-center text-xs font-bold">
+                    AI</div>
+                <div class="max-w-[80%] space-y-2">
+                    <div
+                        class="rounded-2xl px-5 py-3 bg-white border border-gray-100 text-gray-800 shadow-sm leading-relaxed">
+                        <span x-text="currentStream"></span><span class="typing-cursor"></span>
+                    </div>
+                    <!-- Streaming Citations -->
+                    <template x-if="streamSources.length > 0">
+                        <div class="flex flex-wrap gap-2 pt-1 animate-pulse">
+                            <div class="h-6 w-24 bg-gray-100 rounded-full"></div>
                         </div>
                     </template>
                 </div>
             </div>
-        </template>
 
-        <!-- Streaming/Typing Indicator -->
-        <div x-show="isTyping" class="text-left">
-            <div class="inline-block max-w-3xl p-4 rounded chat-bubble-bot">
-                <span x-text="currentStream" class="whitespace-pre-wrap"></span><span class="typing-cursor"></span>
-
-                <!-- Streaming Sources -->
-                <template x-if="streamSources.length > 0">
-                    <div class="mt-2 text-xs text-pink-500 opacity-50">
-                        [ACCESSING_DATA...]
-                    </div>
-                </template>
-            </div>
+            <div id="chat-anchor" class="h-4"></div>
         </div>
-
-        <!-- Bottom Anchor -->
-        <div id="chat-anchor"></div>
     </div>
 
     <!-- Input Area -->
-    <div class="p-4 border-t border-green-900 bg-black">
-        <div class="relative" x-data>
+    <div class="p-6 bg-white">
+        <div class="max-w-3xl mx-auto relative group">
             <textarea
-                class="w-full bg-[#0a0a0a] border border-green-800 p-3 h-24 text-green-300 focus:outline-none focus:border-green-500 resize-none font-mono text-sm"
-                placeholder="ENTER_QUERY..." @keydown.enter.prevent="$dispatch('send-query')" id="msg-input"></textarea>
-            <button class="absolute bottom-2 right-2 bg-green-900 hover:bg-green-700 text-white px-4 py-1 text-xs"
-                @click="$dispatch('send-query')">
-                SEND_PACKET
+                class="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-5 pr-12 py-4 shadow-sm focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50/50 outline-none text-gray-700 placeholder-gray-400 resize-none transition-all duration-200 font-normal leading-relaxed overflow-hidden"
+                placeholder="Ask anything..." rows="1" @input="autoResize($event)" @keydown.enter.prevent="sendQuery()"
+                id="msg-input"></textarea>
+
+            <button
+                class="absolute right-3 bottom-3 p-2 rounded-xl bg-blue-600 text-white shadow-md hover:bg-blue-700 hover:shadow-lg transition-all transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                @click="sendQuery()" :disabled="isTyping">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
             </button>
+        </div>
+        <div class="text-center mt-2 text-xs text-gray-400 font-light">
+            AI can make mistakes. Please review citations.
         </div>
     </div>
 
